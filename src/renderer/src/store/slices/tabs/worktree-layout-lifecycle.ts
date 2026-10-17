@@ -71,7 +71,12 @@ function collapseEmptiedKeptGroups(
         groups[0]?.id ?? null
       )
       layoutOut = collapsed.layoutByWorktree
-      activeOut = collapsed.activeGroupIdByWorktree
+      // Why: only the collapsed group's own focus moves; an untouched active group keeps it.
+      const activeGroupId = activeOut[worktreeId]
+      activeOut =
+        activeGroupId === undefined || activeGroupId === group.id
+          ? collapsed.activeGroupIdByWorktree
+          : { ...collapsed.activeGroupIdByWorktree, [worktreeId]: activeGroupId }
     }
     if (groups !== (groupsOut[worktreeId] ?? [])) {
       groupsOut = { ...groupsOut, [worktreeId]: groups }

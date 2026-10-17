@@ -154,6 +154,48 @@ describe('purgeWorktreeTerminalState with a surviving twin', () => {
     expect(s.activeGroupIdByWorktree[key]).toBe(survivingGroupIds[0])
   })
 
+  it('keeps an untouched active group when it collapses a split the purge emptied', () => {
+    const f = twin()
+    const key = f.workspaceKey
+    const remoteIds = [f.remote.terminalTabId, f.remote.fileId]
+    f.store.setState((s) => {
+      const [group] = s.groupsByWorktree[key] ?? []
+      if (!group) {
+        throw new Error('fixture has no tab group')
+      }
+      const localIds = group.tabOrder.filter((id) => !remoteIds.includes(id))
+      return {
+        groupsByWorktree: {
+          [key]: [
+            { ...group, id: 'a', tabOrder: localIds.slice(0, 1), activeTabId: localIds[0] },
+            { ...group, id: 'b', tabOrder: localIds.slice(1), activeTabId: localIds[1] },
+            { ...group, id: 'c', tabOrder: remoteIds, activeTabId: remoteIds[0] }
+          ]
+        },
+        layoutByWorktree: {
+          [key]: {
+            type: 'split',
+            direction: 'horizontal',
+            first: { type: 'leaf', groupId: 'a' },
+            second: {
+              type: 'split',
+              direction: 'vertical',
+              first: { type: 'leaf', groupId: 'b' },
+              second: { type: 'leaf', groupId: 'c' }
+            }
+          }
+        },
+        activeGroupIdByWorktree: { [key]: 'a' }
+      }
+    })
+
+    f.store.getState().purgeWorktreeTerminalState([hostWorktreeTarget({ id: key, ...f.remote })])
+
+    const s = f.store.getState()
+    expect((s.groupsByWorktree[key] ?? []).map((group) => group.id)).toEqual(['a', 'b'])
+    expect(s.activeGroupIdByWorktree[key]).toBe('a')
+  })
+
   it('keeps the runtime twin when the local copy is purged', () => {
     const f = twin('local+runtime')
     const key = f.workspaceKey
