@@ -1,5 +1,9 @@
 import type { AppState } from '@/store/types'
-import type { ExecutionHostId } from '../../../../shared/execution-host'
+import {
+  LOCAL_EXECUTION_HOST_ID,
+  toRuntimeExecutionHostId,
+  type ExecutionHostId
+} from '../../../../shared/execution-host'
 import { buildExecutionHostRegistry } from '../../../../shared/execution-host-registry'
 import { hostWorktreeTarget } from '../../../../shared/worktree/host-qualified-identity'
 import type { Worktree } from '../../../../shared/worktree/types'
@@ -13,17 +17,20 @@ import { getHostDisplayLabelOverrides } from '../../../../shared/host-setting-ov
  */
 export function collectTwinHostsAlsoSlept(
   state: AppState,
-  worktrees: readonly Pick<Worktree, 'id' | 'hostId'>[]
+  worktrees: readonly Pick<Worktree, 'id' | 'hostId' | 'runtimeOwnerEnvironmentId'>[]
 ): ExecutionHostId[] {
-  // Why stamped rows only: an unstamped legacy row names no host, so nothing can be confirmed.
-  const targets = worktrees.flatMap((worktree) =>
-    worktree.hostId
-      ? [
-          normalizeWorktreePurgeTarget(
-            hostWorktreeTarget({ id: worktree.id, hostId: worktree.hostId })
-          )
-        ]
-      : []
+  // Why: an unstamped row is this app's copy, as the listing and the purge read it.
+  const targets = worktrees.map((worktree) =>
+    normalizeWorktreePurgeTarget(
+      hostWorktreeTarget({
+        id: worktree.id,
+        hostId:
+          worktree.hostId ??
+          (worktree.runtimeOwnerEnvironmentId
+            ? toRuntimeExecutionHostId(worktree.runtimeOwnerEnvironmentId)
+            : LOCAL_EXECUTION_HOST_ID)
+      })
+    )
   )
   const alsoSlept = new Set<ExecutionHostId>()
   for (const twins of collectHostTwinPurgeScopes(state, targets).byHost.values()) {

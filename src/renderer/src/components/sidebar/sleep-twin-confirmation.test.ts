@@ -31,6 +31,18 @@ describe('the twin copies a sleep also reaches', () => {
     ])
   })
 
+  it('treats an unstamped row as the local copy', () => {
+    const f = twin()
+    const unstampedLocal = { id: f.workspaceKey }
+
+    expect(collectTwinHostsAlsoSlept(f.store.getState(), [unstampedLocal])).toEqual([
+      f.remote.hostId
+    ])
+    expect(
+      collectTwinHostsAlsoSlept(f.store.getState(), [unstampedLocal, row(f, f.remote)])
+    ).toEqual([])
+  })
+
   it('names nothing when every copy is selected', () => {
     const f = twin()
 
