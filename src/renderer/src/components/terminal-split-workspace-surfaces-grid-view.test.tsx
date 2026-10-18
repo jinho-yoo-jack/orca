@@ -16,7 +16,8 @@ type SurfaceProps = {
 
 const mocks = vi.hoisted(() => ({
   surfaces: new Map<string, SurfaceProps>(),
-  emptyCells: new Map<string, WorkspaceGridViewCellRect>()
+  emptyCells: new Map<string, WorkspaceGridViewCellRect>(),
+  openingEmptyCells: new Set<string>()
 }))
 vi.mock('./TerminalWorktreeSplitSurface', () => ({
   WorktreeSplitSurface: (props: SurfaceProps) => {
@@ -25,8 +26,15 @@ vi.mock('./TerminalWorktreeSplitSurface', () => ({
   }
 }))
 vi.mock('./workspace-grid-view/WorkspaceGridViewEmptyCell', () => ({
-  WorkspaceGridViewEmptyCell: (props: { workspaceId: string; rect: WorkspaceGridViewCellRect }) => {
+  WorkspaceGridViewEmptyCell: (props: {
+    workspaceId: string
+    rect: WorkspaceGridViewCellRect
+    isOpening: boolean
+  }) => {
     mocks.emptyCells.set(props.workspaceId, props.rect)
+    if (props.isOpening) {
+      mocks.openingEmptyCells.add(props.workspaceId)
+    }
     return null
   }
 }))
@@ -43,11 +51,13 @@ const ALL_IDS = [ALPHA, BETA, GAMMA, OUTSIDE]
 const LAYOUT = { type: 'leaf', groupId: 'group-1' }
 
 let root: Root | undefined
+let container: HTMLDivElement
 afterEach(async () => {
   await act(async () => root?.unmount())
   root = undefined
   mocks.surfaces.clear()
   mocks.emptyCells.clear()
+  mocks.openingEmptyCells.clear()
 })
 
 async function renderSurfaces({
@@ -69,7 +79,7 @@ async function renderSurfaces({
     activityTerminalPortals: [],
     anyMountedWorktreeHasLayout: true,
     backgroundMountTabIdsByWorktreeRef: { current: new Map() },
-    effectiveActiveLayout: LAYOUT,
+    effectiveActiveLayout: withoutLayout.includes(activeId) ? null : LAYOUT,
     effectiveParkedTerminalWorktreeIds: new Set(),
     forceParkedTerminalWorktreeIds: new Set(),
     getEffectiveLayoutForWorktree: (id: string) => (withoutLayout.includes(id) ? null : LAYOUT),
@@ -80,7 +90,8 @@ async function renderSurfaces({
     visibleWorkspaceIds: visibleIds,
     workspaceSurfaces: ALL_IDS.map((id) => ({ id, path: `/${id}` }))
   } as unknown as TerminalController
-  root = createRoot(document.createElement('div'))
+  container = document.createElement('div')
+  root = createRoot(container)
   await act(async () => root?.render(<TerminalSplitWorkspaceSurfaces controller={controller} />))
 }
 
@@ -132,6 +143,22 @@ describe('TerminalSplitWorkspaceSurfaces on a workspace grid view', () => {
     for (const id of [ALPHA, BETA]) {
       expect(mocks.surfaces.get(id)).toMatchObject({ isVisible: false, gridViewCellRect: null })
     }
+    expect(mocks.emptyCells.size).toBe(0)
+  })
+
+  it('keeps the grid view on screen while the active member is still opening', async () => {
+    await renderSurfaces({ activeId: BETA, visibleIds: [ALPHA, BETA], withoutLayout: [BETA] })
+
+    // Why: an empty member can seed its first tab asynchronously after it becomes active.
+    expect(container.firstElementChild?.classList.contains('hidden')).toBe(false)
+    expect(mocks.surfaces.get(ALPHA)).toMatchObject({ isVisible: true, isFocused: false })
+    expect(mocks.openingEmptyCells.has(BETA)).toBe(true)
+  })
+
+  it('still hides the single view while its workspace has no layout', async () => {
+    await renderSurfaces({ activeId: OUTSIDE, visibleIds: [OUTSIDE], withoutLayout: [OUTSIDE] })
+
+    expect(container.firstElementChild?.classList.contains('hidden')).toBe(true)
     expect(mocks.emptyCells.size).toBe(0)
   })
 })

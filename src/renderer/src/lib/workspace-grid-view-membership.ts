@@ -4,15 +4,22 @@ export const WORKSPACE_GRID_VIEW_MAX_MEMBERS = 6
 export function addWorkspaceGridViewMember(
   memberIds: readonly string[],
   workspaceId: string,
-  activeWorkspaceId: string | null
+  activeWorkspaceId: string | null,
+  isKnownWorkspace: (workspaceId: string) => boolean
 ): readonly string[] {
   if (memberIds.includes(workspaceId)) {
     return memberIds
   }
-  const seeded =
-    memberIds.length === 0 && activeWorkspaceId && activeWorkspaceId !== workspaceId
-      ? [activeWorkspaceId]
+  // Why only at the limit: a member can look unknown while its host reconnects, so it is dropped
+  // only when its slot is needed. Removed workspaces are never shown, so they make room first.
+  const kept =
+    memberIds.length >= WORKSPACE_GRID_VIEW_MAX_MEMBERS
+      ? memberIds.filter(isKnownWorkspace)
       : memberIds
+  const seeded =
+    kept.length === 0 && activeWorkspaceId && activeWorkspaceId !== workspaceId
+      ? [activeWorkspaceId]
+      : kept
   if (seeded.length >= WORKSPACE_GRID_VIEW_MAX_MEMBERS) {
     return memberIds
   }
@@ -31,8 +38,12 @@ export function removeWorkspaceGridViewMember(
   return remaining.length < 2 ? [] : remaining
 }
 
-export function isWorkspaceGridViewFull(memberIds: readonly string[]): boolean {
-  return memberIds.length >= WORKSPACE_GRID_VIEW_MAX_MEMBERS
+/** Counts only members that still resolve, so removed workspaces never block adding. */
+export function isWorkspaceGridViewFull(
+  memberIds: readonly string[],
+  isKnownWorkspace: (workspaceId: string) => boolean
+): boolean {
+  return memberIds.filter(isKnownWorkspace).length >= WORKSPACE_GRID_VIEW_MAX_MEMBERS
 }
 
 /**

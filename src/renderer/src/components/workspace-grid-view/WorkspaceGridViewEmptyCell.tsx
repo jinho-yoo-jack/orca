@@ -13,11 +13,14 @@ import {
 export function WorkspaceGridViewEmptyCell({
   workspaceId,
   workspacePath,
-  rect
+  rect,
+  isOpening
 }: {
   workspaceId: string
   workspacePath: string
   rect: WorkspaceGridViewCellRect
+  /** True once the member is active and its first tab is still being created. */
+  isOpening: boolean
 }): React.JSX.Element {
   return (
     <div
@@ -28,20 +31,29 @@ export function WorkspaceGridViewEmptyCell({
       <WorkspaceGridViewCellHeader
         workspaceId={workspaceId}
         workspacePath={workspacePath}
-        isFocused={false}
+        isFocused={isOpening}
         windowCorners={workspaceGridViewCellWindowCorners(rect)}
       />
       <div className="flex flex-1 items-center justify-center bg-background">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => focusWorkspaceGridViewMember(workspaceId)}
-        >
-          {translate(
-            'auto.components.workspace-grid-view.WorkspaceGridViewEmptyCell.openWorkspace',
-            'Open Workspace'
-          )}
-        </Button>
+        {isOpening ? (
+          <span className="text-xs text-muted-foreground">
+            {translate(
+              'auto.components.workspace-grid-view.WorkspaceGridViewEmptyCell.openingWorkspace',
+              'Opening workspace…'
+            )}
+          </span>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => focusWorkspaceGridViewMember(workspaceId)}
+          >
+            {translate(
+              'auto.components.workspace-grid-view.WorkspaceGridViewEmptyCell.openWorkspace',
+              'Open Workspace'
+            )}
+          </Button>
+        )}
       </div>
     </div>
   )

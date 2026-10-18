@@ -44,10 +44,12 @@ export function TerminalSplitWorkspaceSurfaces({
   const gridViewCellRectFor = (workspaceId: string) =>
     gridViewCellRects[visibleWorkspaceIds.indexOf(workspaceId)] ?? null
   const renderedWorkspaceIds = new Set<string>()
+  // Why the grid view stays shown without an active layout: opening an empty member can seed
+  // its first tab asynchronously, and the other cells must not vanish meanwhile.
   return (
     <div
       className={`relative flex flex-1 min-w-0 min-h-0 overflow-hidden${
-        effectiveActiveLayout
+        effectiveActiveLayout || isGridViewVisible
           ? ''
           : retainBrowserGuestPaint
             ? ' opacity-0 pointer-events-none'
@@ -109,6 +111,7 @@ export function TerminalSplitWorkspaceSurfaces({
                   workspaceId={workspace.id}
                   workspacePath={workspace.path}
                   rect={rect}
+                  isOpening={workspace.id === renderedActiveWorktreeId}
                 />
               ) : null
             })

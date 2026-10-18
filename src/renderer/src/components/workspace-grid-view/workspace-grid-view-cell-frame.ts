@@ -1,4 +1,4 @@
-import type { CSSProperties, PointerEvent } from 'react'
+import type { CSSProperties } from 'react'
 import { cn } from '@/lib/utils'
 import {
   workspaceGridViewCellEdges,
@@ -37,14 +37,35 @@ export function workspaceGridViewCellWindowCorners(rect: WorkspaceGridViewCellRe
   return { topLeft: edges.top && edges.left, topRight: edges.top && edges.right }
 }
 
+function isCellAction(target: EventTarget): target is Element {
+  return (
+    target instanceof Element &&
+    target.closest(`[${WORKSPACE_GRID_VIEW_CELL_ACTION_ATTR}]`) !== null
+  )
+}
+
+function isKeyboardFocus(element: Element): boolean {
+  try {
+    return element.matches(':focus-visible')
+  } catch {
+    return false
+  }
+}
+
 export function focusWorkspaceGridViewCellOnPointerDown(
-  event: PointerEvent<HTMLElement>,
+  target: EventTarget,
   workspaceId: string
 ): void {
-  if (
-    event.target instanceof Element &&
-    event.target.closest(`[${WORKSPACE_GRID_VIEW_CELL_ACTION_ATTR}]`)
-  ) {
+  if (isCellAction(target)) {
+    return
+  }
+  focusWorkspaceGridViewMember(workspaceId)
+}
+
+/** Keeps the active workspace on the cell that holds DOM focus, so shortcuts never hit another cell. */
+export function focusWorkspaceGridViewCellOnFocus(target: EventTarget, workspaceId: string): void {
+  // Why: a click on a cell action also focuses it; only keyboard focus there moves the workspace.
+  if (isCellAction(target) && !isKeyboardFocus(target)) {
     return
   }
   focusWorkspaceGridViewMember(workspaceId)

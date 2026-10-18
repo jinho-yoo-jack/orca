@@ -18194,7 +18194,8 @@
           "removeFromGridView": "Remove from Grid View"
         },
         "WorkspaceGridViewEmptyCell": {
-          "openWorkspace": "Open Workspace"
+          "openWorkspace": "Open Workspace",
+          "openingWorkspace": "Opening workspace…"
         }
       }
     },

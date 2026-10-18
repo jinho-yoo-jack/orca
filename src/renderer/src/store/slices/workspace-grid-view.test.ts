@@ -66,6 +66,18 @@ describe('createWorkspaceGridViewSlice', () => {
     expect(storage.values.has(STORAGE_KEY)).toBe(false)
   })
 
+  it('lets a full grid view of removed workspaces take a new member and saves the pruned list', () => {
+    const removed = ['gone-1', 'gone-2', 'gone-3', 'gone-4', 'gone-5', 'gone-6']
+    storage.values.set(STORAGE_KEY, JSON.stringify(removed))
+    const store = makeStore('a')
+    expect(store.getState().workspaceGridViewMemberIds).toEqual(removed)
+
+    store.getState().addWorkspaceToGridView('b')
+
+    expect(store.getState().workspaceGridViewMemberIds).toEqual(['a', 'b'])
+    expect(storage.values.get(STORAGE_KEY)).toBe(JSON.stringify(['a', 'b']))
+  })
+
   it('keeps working for the session when device storage throws', () => {
     vi.stubGlobal('localStorage', {
       getItem: () => {

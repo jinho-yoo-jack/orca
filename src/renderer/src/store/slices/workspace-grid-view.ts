@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand'
+import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
 import {
   addWorkspaceGridViewMember,
   removeWorkspaceGridViewMember
@@ -15,6 +16,18 @@ export type WorkspaceGridViewSlice = {
   workspaceGridViewMemberIds: readonly string[]
   addWorkspaceToGridView: (workspaceId: string) => void
   removeWorkspaceFromGridView: (workspaceId: string) => void
+}
+
+/** Whether a stored member still names a worktree or folder workspace this window knows. */
+export function isKnownGridViewWorkspace(
+  state: Pick<AppState, 'folderWorkspaces' | 'getKnownWorktreeById'>,
+  workspaceId: string
+): boolean {
+  const scope = parseWorkspaceKey(workspaceId)
+  if (scope?.type === 'folder') {
+    return state.folderWorkspaces.some((row) => row.id === scope.folderWorkspaceId)
+  }
+  return state.getKnownWorktreeById(workspaceId) !== undefined
 }
 
 export const createWorkspaceGridViewSlice: StateCreator<
@@ -35,8 +48,15 @@ export const createWorkspaceGridViewSlice: StateCreator<
     workspaceGridViewMemberIds: loadWorkspaceGridViewMemberIds(),
 
     addWorkspaceToGridView: (workspaceId) => {
-      const { workspaceGridViewMemberIds, activeWorktreeId } = get()
-      commit(addWorkspaceGridViewMember(workspaceGridViewMemberIds, workspaceId, activeWorktreeId))
+      const state = get()
+      commit(
+        addWorkspaceGridViewMember(
+          state.workspaceGridViewMemberIds,
+          workspaceId,
+          state.activeWorktreeId,
+          (memberId) => isKnownGridViewWorkspace(state, memberId)
+        )
+      )
     },
 
     removeWorkspaceFromGridView: (workspaceId) => {

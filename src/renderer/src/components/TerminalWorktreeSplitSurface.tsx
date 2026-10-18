@@ -14,6 +14,7 @@ import { WorkspacePaneOverlayLayers } from './WorkspacePaneOverlayLayers'
 import type { WorkspaceGridViewCellRect } from '@/lib/workspace-grid-view-cell-rects'
 import { WorkspaceGridViewCellHeader } from './workspace-grid-view/WorkspaceGridViewCellHeader'
 import {
+  focusWorkspaceGridViewCellOnFocus,
   focusWorkspaceGridViewCellOnPointerDown,
   workspaceGridViewCellClassName,
   workspaceGridViewCellStyle,
@@ -79,7 +80,12 @@ export const WorktreeSplitSurface = React.memo(function WorktreeSplitSurface({
       aria-hidden={!isVisible}
       onPointerDownCapture={
         gridViewCell && !isFocused
-          ? (event) => focusWorkspaceGridViewCellOnPointerDown(event, worktreeId)
+          ? (event) => focusWorkspaceGridViewCellOnPointerDown(event.target, worktreeId)
+          : undefined
+      }
+      onFocusCapture={
+        gridViewCell && !isFocused
+          ? (event) => focusWorkspaceGridViewCellOnFocus(event.target, worktreeId)
           : undefined
       }
     >

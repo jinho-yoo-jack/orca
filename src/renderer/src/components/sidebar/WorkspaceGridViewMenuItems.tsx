@@ -8,6 +8,7 @@ import {
 } from '@/lib/workspace-grid-view-actions'
 import { isWorkspaceGridViewFull } from '@/lib/workspace-grid-view-membership'
 import { useAppStore } from '@/store'
+import { isKnownGridViewWorkspace } from '@/store/slices/workspace-grid-view'
 
 export function WorkspaceGridViewMenuItems({
   workspaceId,
@@ -17,7 +18,11 @@ export function WorkspaceGridViewMenuItems({
   disabled: boolean
 }): JSX.Element {
   const isMember = useAppStore((state) => state.workspaceGridViewMemberIds.includes(workspaceId))
-  const isFull = useAppStore((state) => isWorkspaceGridViewFull(state.workspaceGridViewMemberIds))
+  const isFull = useAppStore((state) =>
+    isWorkspaceGridViewFull(state.workspaceGridViewMemberIds, (memberId) =>
+      isKnownGridViewWorkspace(state, memberId)
+    )
+  )
 
   if (isMember) {
     return (
