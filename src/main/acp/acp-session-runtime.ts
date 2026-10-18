@@ -2,9 +2,9 @@ import type { Readable, Writable } from 'node:stream'
 import { z } from 'zod'
 import {
   AcpAgentError,
-  AcpAuthRequiredError,
   AcpInvalidResponseError,
-  AcpRpcError
+  AcpRpcError,
+  acpAuthRequiredError
 } from './acp-errors'
 import { AcpJsonRpcPeer, type AcpPeerOptions, type AcpRequestContext } from './acp-json-rpc-peer'
 import {
@@ -268,7 +268,7 @@ export class AcpSessionRuntime {
     const result = await this.peer.request(method, params, { timeoutMs: null }).catch((error) => {
       if (error instanceof AcpAgentError && error.code === -32000) {
         this.options.onAuthRequired?.()
-        throw new AcpAuthRequiredError(error.message, error.data)
+        throw acpAuthRequiredError(error)
       }
       throw error
     })
