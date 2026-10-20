@@ -60,6 +60,7 @@ export function WorkspacePaneOverlayLayers({
       <RetainedBrowserPaneOverlayLayer
         worktreeId={worktreeId}
         isWorktreeActive={isVisible}
+        isWorktreeFocused={isFocused}
         mountEligible={mountRetainedBrowserOverlay}
       />
       {mountEmulatorOverlay ? (
