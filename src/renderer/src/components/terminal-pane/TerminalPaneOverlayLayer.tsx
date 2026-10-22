@@ -173,6 +173,7 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
             isWorktreeActive={isWorktreeActive}
             isVisible={isVisible}
             isActive={isActive}
+            dimmed={groups.length > 1 && isVisible && !isActive}
             activityTerminalPortal={activityTerminalPortal}
             onFocusOwningGroup={focusOwningGroup}
             consumeSuppressedPtyExit={consumeSuppressedPtyExit}
