@@ -2,7 +2,10 @@ import { Button } from '../ui/button'
 import { translate } from '@/i18n/i18n'
 import type { WorkspaceGridViewCellRect } from '@/lib/workspace-grid-view-cell-rects'
 import { focusWorkspaceGridViewMember } from '@/lib/workspace-grid-view-actions'
-import { WorkspaceGridViewCellHeader } from './WorkspaceGridViewCellHeader'
+import {
+  WorkspaceGridViewCellHeader,
+  useWorkspaceGridViewCellName
+} from './WorkspaceGridViewCellHeader'
 import {
   workspaceGridViewCellClassName,
   workspaceGridViewCellStyle,
@@ -22,6 +25,7 @@ export function WorkspaceGridViewEmptyCell({
   /** True once the member is active and its first tab is still being created. */
   isOpening: boolean
 }): React.JSX.Element {
+  const { spokenName } = useWorkspaceGridViewCellName(workspaceId, workspacePath)
   return (
     <div
       className={workspaceGridViewCellClassName(rect)}
@@ -46,6 +50,11 @@ export function WorkspaceGridViewEmptyCell({
           <Button
             variant="outline"
             size="sm"
+            aria-label={translate(
+              'auto.components.workspace-grid-view.WorkspaceGridViewEmptyCell.openNamedWorkspace',
+              'Open Workspace: {{value0}}',
+              { value0: spokenName }
+            )}
             onClick={() => focusWorkspaceGridViewMember(workspaceId)}
           >
             {translate(

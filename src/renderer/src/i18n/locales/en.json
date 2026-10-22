@@ -18584,11 +18584,14 @@
       },
       "workspace-grid-view": {
         "WorkspaceGridViewCellHeader": {
-          "removeFromGridView": "Remove from Grid View"
+          "removeFromGridView": "Remove from Grid View",
+          "cellNameWithProject": "{{value0}} ({{value1}})",
+          "removeNamedFromGridView": "Remove from Grid View: {{value0}}"
         },
         "WorkspaceGridViewEmptyCell": {
           "openWorkspace": "Open Workspace",
-          "openingWorkspace": "Opening workspace…"
+          "openingWorkspace": "Opening workspace…",
+          "openNamedWorkspace": "Open Workspace: {{value0}}"
         }
       }
     },

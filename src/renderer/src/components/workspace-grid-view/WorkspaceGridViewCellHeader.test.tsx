@@ -27,7 +27,8 @@ vi.mock('../ui/tooltip', () => ({
   TooltipContent: () => null
 }))
 vi.mock('@/i18n/i18n', () => ({
-  translate: (_key: string, fallback: string) => fallback
+  translate: (_key: string, fallback: string, values?: Record<string, string>) =>
+    fallback.replace(/\{\{(\w+)\}\}/g, (_match, name: string) => values?.[name] ?? '')
 }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -89,5 +90,26 @@ describe('WorkspaceGridViewCellHeader window-corner clearance', () => {
     renderHeader({ topLeft: false, topRight: false })
     expect(container.textContent).toContain('feature')
     expect(container.textContent).toContain('orca')
+  })
+
+  it('names the workspace and its project in the remove button', () => {
+    renderHeader({ topLeft: false, topRight: false })
+    // Why: every cell has a remove button, so a screen reader must hear which one this is.
+    expect(container.querySelector('button')?.getAttribute('aria-label')).toBe(
+      'Remove from Grid View: feature (orca)'
+    )
+  })
+
+  it('names only the workspace when its project is unknown', () => {
+    const repos = store.state.repos
+    store.state.repos = []
+    try {
+      renderHeader({ topLeft: false, topRight: false })
+      expect(container.querySelector('button')?.getAttribute('aria-label')).toBe(
+        'Remove from Grid View: feature'
+      )
+    } finally {
+      store.state.repos = repos
+    }
   })
 })
