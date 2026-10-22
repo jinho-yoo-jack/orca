@@ -12,6 +12,7 @@ import WorktreeContextMenu from './WorktreeContextMenu'
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const state = {
+  unifiedTabsByWorktree: {},
   updateWorktreeMeta: vi.fn(),
   setWorktreesPinnedAndReveal: vi.fn(),
   workspaceStatuses: [],
@@ -29,7 +30,8 @@ const state = {
   keybindings: {},
   settings: { activeRuntimeEnvironmentId: null, openInApplications: [] },
   openSettingsPage: vi.fn(),
-  openSettingsTarget: vi.fn()
+  openSettingsTarget: vi.fn(),
+  workspaceGridViewMemberIds: []
 }
 
 vi.mock('@/store', () => ({
