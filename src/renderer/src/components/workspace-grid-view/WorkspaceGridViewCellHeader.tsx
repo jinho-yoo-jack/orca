@@ -10,6 +10,7 @@ import { basename } from '@/lib/path'
 import { cn } from '@/lib/utils'
 import { removeWorkspaceFromGridViewKeepingFocus } from '@/lib/workspace-grid-view-actions'
 import { resolveWorktreeDisplayName } from '@/lib/worktree-default-display-name'
+import { selectFolderWorkspaces } from '@/store/workspace-record-selectors'
 import { WORKSPACE_GRID_VIEW_CELL_ACTION_ATTR } from './workspace-grid-view-cell-frame'
 
 // Why the tab-strip look: the focused cell reads like the focused tab, with the same tint and bar.
@@ -23,7 +24,7 @@ function selectWorkspaceGridViewCellTitle(
 ): string {
   const scope = parseWorkspaceKey(workspaceId)
   if (scope?.type === 'folder') {
-    const folder = state.folderWorkspaces.find((row) => row.id === scope.folderWorkspaceId)
+    const folder = selectFolderWorkspaces(state).find((row) => row.id === scope.folderWorkspaceId)
     return folder?.name.trim() || basename(workspacePath)
   }
   const worktree = state.getKnownWorktreeById(workspaceId)

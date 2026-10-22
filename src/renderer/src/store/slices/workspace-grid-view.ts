@@ -5,6 +5,7 @@ import {
   removeWorkspaceGridViewMember
 } from '@/lib/workspace-grid-view-membership'
 import type { AppState } from '../types'
+import { selectFolderWorkspaces } from '../workspace-record-selectors'
 import {
   loadWorkspaceGridViewMemberIds,
   saveWorkspaceGridViewMemberIds
@@ -25,7 +26,7 @@ export function isKnownGridViewWorkspace(
 ): boolean {
   const scope = parseWorkspaceKey(workspaceId)
   if (scope?.type === 'folder') {
-    return state.folderWorkspaces.some((row) => row.id === scope.folderWorkspaceId)
+    return selectFolderWorkspaces(state).some((row) => row.id === scope.folderWorkspaceId)
   }
   return state.getKnownWorktreeById(workspaceId) !== undefined
 }
