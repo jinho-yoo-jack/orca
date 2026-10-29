@@ -7,18 +7,14 @@ import {
 } from '../../../../../../shared/execution-host'
 import { parseWorkspaceKey } from '../../../../../../shared/workspace-scope'
 import { getRepoIdFromWorktreeId } from '../../../../../../shared/worktree/id'
-import {
-  composeWorktreeHostIdentity,
-  type HostScopedWorktreeKey
-} from '../../../../../../shared/worktree/host-qualified-identity'
 import type { WorktreePurgeTarget } from '../../worktree-purge-target'
-import { getFolderWorkspaceHostId } from '../../../folder-workspaces/folder-workspace-catalog'
+import { getFolderWorkspaceHostId } from '../../../../../../shared/folder-workspace-execution-host'
 import { getProjectGroupHostId } from '../../project-group-owner-routing'
 import {
   collectRemovedHostTwinState,
-  removedHostCanonicalizer
+  removedHostCanonicalizer,
+  twinSelectionPatch
 } from '../../../repos/repo-removal-host-twin-attribution'
-import { twinSelectionPatch } from '../../../repos/repo-removal-host-twin-teardown'
 import { removeWorktreeLayout } from '../../tabs/worktree-layout-lifecycle'
 import { buildActiveSurfacePatch } from '../../tabs/tabs-surface'
 import { worktreeHostMatchOptions, worktreeMatchesHost } from '../listing/worktree-host-ownership'
@@ -31,6 +27,12 @@ import {
   retirePurgedTabLaunches
 } from './purged-structured-launch-retirement'
 import { buildWorktreePurgeSurfacePatch } from './worktree-purge-surface-patch'
+import { noticeRemovedUnsavedFiles } from './removed-workspace-unsaved-files'
+import {
+  selectDetectedWorktreesByRepo,
+  selectFolderWorkspaces,
+  selectWorktreesByRepo
+} from '../../../workspace-record-selectors'
 
 type PublisherRow = {
   id: string
@@ -38,11 +40,7 @@ type PublisherRow = {
   runtimeOwnerEnvironmentId?: string
 }
 
-/**
- * For one targeted id: hosts outside the purge that still publish it, and the host each purged
- * target's state is attributed to. Rows match by the listing's host matching, so an unstamped
- * legacy row or a paired runtime's SSH row counts as the purged copy, not a twin.
- */
+/** Resolve surviving publishers and purged attribution with listing rules; legacy unstamped and runtime-proxied SSH rows may be the purged copy, not twins. */
 function resolvePurgedPublishers(
   s: AppState,
   workspaceId: string,
@@ -52,7 +50,7 @@ function resolvePurgedPublishers(
   const attributedHostIds = new Map([...purgedHosts].map((hostId) => [hostId, hostId]))
   if (scope?.type === 'folder') {
     const groups = s.projectGroups ?? []
-    const hosts = (s.folderWorkspaces ?? [])
+    const hosts = (selectFolderWorkspaces(s) ?? [])
       .filter((folder) => folder.id === scope.folderWorkspaceId)
       .flatMap((folder) => {
         const groupHosts = groups
@@ -71,8 +69,8 @@ function resolvePurgedPublishers(
   const worktreeId = scope?.type === 'worktree' ? scope.worktreeId : workspaceId
   const repoId = getRepoIdFromWorktreeId(worktreeId)
   const rows: PublisherRow[] = [
-    ...(s.worktreesByRepo[repoId] ?? []),
-    ...(s.detectedWorktreesByRepo[repoId]?.worktrees ?? [])
+    ...(selectWorktreesByRepo(s)[repoId] ?? []),
+    ...(selectDetectedWorktreesByRepo(s)[repoId]?.worktrees ?? [])
   ].filter((row) => row.id === worktreeId)
   const survivors = new Set<ExecutionHostId>()
   for (const row of rows) {
@@ -99,12 +97,13 @@ function resolvePurgedPublishers(
   }
 }
 
-export type HostTwinPurgeScopes = {
-  /** Host identities of every host target whose id a twin still publishes. */
-  twinTargetKeys: Set<HostScopedWorktreeKey>
-  /** Per attributed host, its twin ids with the hosts that still publish them. */
-  byHost: Map<ExecutionHostId, Map<string, ExecutionHostId[]>>
+/** Every host whose listing publishes this id; empty when no row names it. */
+export function workspacePublishingHosts(s: AppState, workspaceId: string): ExecutionHostId[] {
+  return resolvePurgedPublishers(s, workspaceId, new Set()).survivors
 }
+
+/** Per attributed host, its twin ids with the hosts that still publish them. */
+export type HostTwinPurgeScopes = Map<ExecutionHostId, Map<string, ExecutionHostId[]>>
 
 /** Host targets whose id a host outside the purge still publishes. A raw id for the same id wins. */
 export function collectHostTwinPurgeScopes(
@@ -118,17 +117,16 @@ export function collectHostTwinPurgeScopes(
       purgedHostsById.set(id, (purgedHostsById.get(id) ?? new Set()).add(hostId))
     }
   }
-  const scopes: HostTwinPurgeScopes = { twinTargetKeys: new Set(), byHost: new Map() }
+  const scopes: HostTwinPurgeScopes = new Map()
   for (const [id, purgedHosts] of purgedHostsById) {
     const { survivors, attributedHostIds } = resolvePurgedPublishers(s, id, purgedHosts)
     if (survivors.length === 0) {
       continue
     }
     for (const hostId of purgedHosts) {
-      scopes.twinTargetKeys.add(composeWorktreeHostIdentity(hostId, id))
       const attributedHostId = attributedHostIds.get(hostId) ?? hostId
-      const scope = scopes.byHost.get(attributedHostId) ?? new Map<string, ExecutionHostId[]>()
-      scopes.byHost.set(attributedHostId, scope.set(id, survivors))
+      const scope = scopes.get(attributedHostId) ?? new Map<string, ExecutionHostId[]>()
+      scopes.set(attributedHostId, scope.set(id, survivors))
     }
   }
   return scopes
@@ -199,6 +197,7 @@ export function buildHostTwinPurgeState(
       }
     }
   }
+  const editorBufferKeepRequest = noticeRemovedUnsavedFiles(s, doomed.removedFileIds)
   const omitters = createWorktreePurgeOmitters(s, new Set(), doomed)
   const tabPrefixedSleeping = {
     sleepingAgentSessionsByPaneKey: omitters.omitByPaneKeyTabPrefix(
@@ -238,6 +237,7 @@ export function buildHostTwinPurgeState(
         (group, index) => group.activeTabId !== s.groupsByWorktree[active]?.[index]?.activeTabId
       ))
   return {
+    editorBufferKeepRequest,
     ...layout,
     // Why: a group may now show a surviving tab of another kind, so selection is derived again.
     ...(selectionRemoved ? buildActiveSurfacePatch({ ...s, ...layout }, active) : {}),

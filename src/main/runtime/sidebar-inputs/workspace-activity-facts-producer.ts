@@ -1,3 +1,4 @@
+import { ProducerRevision } from './producer-revision'
 import {
   AGENT_STATUS_STALE_AFTER_MS,
   isFreshNonDoneAgentStatus,
@@ -27,25 +28,23 @@ export type AgentStatusStoreView = Pick<
   | 'getStatusSnapshotForPane'
   | 'subscribeStatusRowMutations'
   | 'subscribeStatusFreshness'
->
+> &
+  /** The hook server's enriched rows, which main's generated titles follow. */
+  Partial<Pick<AgentHookServer, 'subscribeEnrichedStatus'>>
 
 const AGENT_FRESHNESS_DEADLINE = 'agent-freshness'
 
 type AgentPane = { worktreeId: string; status: LiveAgentWorktreeStatus; staleAt: number }
 
-/**
- * Per-workspace activity facts the sidebar builder reads, kept current one workspace at a time.
- * Surfaces are re-read when the runtime publishes a workspace; agent rows follow the hook server's
- * per-row mutations, so a status ping re-derives one pane and never re-reads surfaces.
- */
+/** Refresh surfaces per workspace publication; hook mutations re-derive only their pane without re-reading surfaces. */
 export class WorkspaceActivityFactsProducer {
   private readonly facts = new Map<string, WorkspaceActivityFacts>()
   private readonly agentPanes = new Map<string, AgentPane>()
   private readonly agentPanesByWorktree = new Map<string, Map<string, AgentPane>>()
   private agentStore: AgentStatusStoreView | null = null
-  private readonly changeListeners = new Set<() => void>()
-  private revision = 0
+  readonly revision = new ProducerRevision()
   private expiryAt = Infinity
+  private readonly refreshListeners = new Set<(worktreeId: string) => void>()
 
   constructor(
     private readonly deps: {
@@ -55,19 +54,24 @@ export class WorkspaceActivityFactsProducer {
     }
   ) {}
 
-  /** Told after every new revision. */
-  onChange(listener: () => void): () => void {
-    this.changeListeners.add(listener)
-    return () => this.changeListeners.delete(listener)
-  }
-
   snapshot(): WorkspaceActivityFactsSnapshot {
-    return { revision: this.revision, facts: Object.fromEntries(this.facts) }
+    return { revision: this.revision.value, facts: Object.fromEntries(this.facts) }
   }
 
   /** Re-reads the workspace's surfaces; the runtime calls this per publication. */
   refreshWorkspace(worktreeId: string): void {
     this.publish(worktreeId, this.deps.readSurfaces(worktreeId))
+    for (const listener of this.refreshListeners) {
+      listener(worktreeId)
+    }
+  }
+
+  /** Hears every per-workspace re-read, so another per-workspace reader shares the funnel. */
+  onWorkspaceRefreshed(listener: (worktreeId: string) => void): () => void {
+    this.refreshListeners.add(listener)
+    return () => {
+      this.refreshListeners.delete(listener)
+    }
   }
 
   attachAgentStatusStore(store: AgentStatusStoreView): () => void {
@@ -195,10 +199,7 @@ export class WorkspaceActivityFactsProducer {
       }
       this.facts.set(worktreeId, next)
     }
-    this.revision += 1
-    for (const listener of this.changeListeners) {
-      listener()
-    }
+    this.revision.bump()
   }
 
   // One deadline for the earliest lease; a renewed lease only moves later, so an early fire re-arms.

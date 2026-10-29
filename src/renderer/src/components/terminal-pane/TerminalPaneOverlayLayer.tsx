@@ -30,6 +30,7 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
   worktreeId,
   worktreePath,
   isWorktreeActive,
+  isWorktreeFocused = isWorktreeActive,
   coldParkTerminalPanes = false,
   isForceParked = false,
   shouldMeasureHiddenWorktree = false,
@@ -41,6 +42,8 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
   worktreeId: string
   worktreePath: string
   isWorktreeActive: boolean
+  /** False for a visible grid view member: its terminals paint but an active pane would grab focus. */
+  isWorktreeFocused?: boolean
   coldParkTerminalPanes?: boolean
   /** Retention-budget force-park keeps eviction-exempt tabs mounted. */
   isForceParked?: boolean
@@ -50,8 +53,7 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
   backgroundMountTabIds?: ReadonlySet<string> | null
   /** Cold-activation deferred tabs receive immediate parked watcher coverage. */
   activationDeferredMountTabIds?: ReadonlySet<string> | null
-  /** False for overlay hosts whose workspace is visible while another owns global keyboard
-   *  chords — the toggle listener is gated to one live workspace at a time. */
+  /** Grant global keyboard chords to one workspace even when another overlay workspace remains visible. */
   ownsNativeChatToggleShortcut?: boolean
 }): React.JSX.Element | null {
   const { terminalTabs, unifiedTabs, groups, activeGroupId } = useAppStore(
@@ -65,7 +67,7 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
   const focusGroup = useAppStore((state) => state.focusGroup)
   const consumeSuppressedPtyExit = useAppStore((state) => state.consumeSuppressedPtyExit)
 
-  useNativeChatToggleShortcut(worktreeId, isWorktreeActive && ownsNativeChatToggleShortcut)
+  useNativeChatToggleShortcut(worktreeId, isWorktreeFocused && ownsNativeChatToggleShortcut)
 
   const captureEmptiedReaction = useCallback(
     () => captureWorkspaceEmptiedReaction(worktreeId),
@@ -135,8 +137,7 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
         const assignment = assignments.get(terminalTab.id)
         const isVisible = Boolean(isWorktreeActive && assignment?.isActiveInGroup)
         if (!shouldMountBackgroundWorktreeTab(backgroundMountTabIds, terminalTab.id)) {
-          // Why only the startup hold lands here visible: reveal admits every other visible
-          // deferred tab in the same render pass.
+          // Only startup holds remain visible here; other visible deferred tabs are admitted in this render.
           return isVisible ? (
             <RetainedPaneHost
               key={terminalTab.id}
@@ -148,7 +149,10 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
             </RetainedPaneHost>
           ) : null
         }
-        const isActive = Boolean(isVisible && assignment?.groupId === activeGroupId)
+        const isFocusedSplit = Boolean(isVisible && assignment?.groupId === activeGroupId)
+        // Why split from isFocusedSplit: a grid view cell keeps its own split dimming while
+        // another cell holds focus, but only the focused cell's pane may take the keyboard.
+        const isActive = isFocusedSplit && isWorktreeFocused
         const activityTerminalPortal = findActivityTerminalPortal(activityTerminalPortals, {
           worktreeId,
           tabId: terminalTab.id
@@ -168,6 +172,7 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
             isWorktreeActive={isWorktreeActive}
             isVisible={isVisible}
             isActive={isActive}
+            dimmed={groups.length > 1 && isVisible && !isFocusedSplit}
             activityTerminalPortal={activityTerminalPortal}
             onFocusOwningGroup={focusOwningGroup}
             consumeSuppressedPtyExit={consumeSuppressedPtyExit}

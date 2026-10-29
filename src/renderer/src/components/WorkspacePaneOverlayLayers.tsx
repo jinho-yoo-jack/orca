@@ -5,15 +5,12 @@ import EmulatorPaneOverlayLayer from './emulator-pane/EmulatorPaneOverlayLayer'
 import StructuredAgentSessionPaneOverlayLayer from './native-chat/StructuredAgentSessionPaneOverlayLayer'
 import AiVaultSessionDropLayer from './tab-group/AiVaultSessionDropLayer'
 
-/**
- * The retained pane hosts for one workspace: terminal, browser, emulator and structured-chat
- * panes anchored onto the group tree's pane bodies, plus the vault drop layer. Shared by every
- * host of the group tree so pane lifecycle (retention, parking, guest paint) has one owner.
- */
+/** Share retained pane hosts across group-tree hosts so retention, parking and browser paint have one lifecycle owner. */
 export function WorkspacePaneOverlayLayers({
   worktreeId,
   worktreePath,
   isVisible,
+  isFocused = isVisible,
   shouldMeasureHiddenWorktree,
   shouldColdParkTerminalPanes,
   isForceParked,
@@ -27,6 +24,8 @@ export function WorkspacePaneOverlayLayers({
   worktreeId: string
   worktreePath: string
   isVisible: boolean
+  /** False for a visible grid view member: its panes paint but must not take keyboard focus. */
+  isFocused?: boolean
   shouldMeasureHiddenWorktree: boolean
   shouldColdParkTerminalPanes: boolean
   isForceParked: boolean
@@ -35,8 +34,7 @@ export function WorkspacePaneOverlayLayers({
   activationDeferredMountTabIds: ReadonlySet<string> | null
   mountRetainedBrowserOverlay: boolean
   mountEmulatorOverlay: boolean
-  /** False for overlay hosts (the floating panel): the active workspace's listener already owns
-   *  the chord, and two live listeners would both toggle. */
+  /** Floating overlays leave the toggle chord to the active workspace; duplicate listeners would both toggle. */
   ownsNativeChatToggleShortcut?: boolean
 }): React.JSX.Element {
   return (
@@ -45,6 +43,7 @@ export function WorkspacePaneOverlayLayers({
         worktreeId={worktreeId}
         worktreePath={worktreePath}
         isWorktreeActive={isVisible}
+        isWorktreeFocused={isFocused}
         coldParkTerminalPanes={shouldColdParkTerminalPanes}
         isForceParked={isForceParked}
         shouldMeasureHiddenWorktree={shouldMeasureHiddenWorktree}
@@ -56,6 +55,7 @@ export function WorkspacePaneOverlayLayers({
       <RetainedBrowserPaneOverlayLayer
         worktreeId={worktreeId}
         isWorktreeActive={isVisible}
+        isWorktreeFocused={isFocused}
         mountEligible={mountRetainedBrowserOverlay}
       />
       {mountEmulatorOverlay ? (
@@ -64,6 +64,7 @@ export function WorkspacePaneOverlayLayers({
       <StructuredAgentSessionPaneOverlayLayer
         worktreeId={worktreeId}
         isWorktreeActive={isVisible}
+        isWorktreeFocused={isFocused}
       />
       <AiVaultSessionDropLayer worktreeId={worktreeId} enabled={isVisible} />
     </>

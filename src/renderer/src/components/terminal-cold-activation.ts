@@ -41,14 +41,12 @@ export function applyTerminalColdActivation(controller: TerminalParkingFoundatio
     tabsByWorktree,
     terminalParkingEnabled,
     terminalTitleSnapshotAuthorityEnabled,
+    visibleWorkspaceIds,
     workspaceSessionReady,
     workspaceSurfaceIds,
     workspaceSurfaceIdSet
   } = controller
-  // Why the surface mounts on the tab model alone: the hydrated tabs, groups, and layout are
-  // everything the tab strip and the chat, browser, and editor panes need. Only terminal
-  // panes wait, held below, for startup restoration to publish PTY ownership — gating the
-  // whole surface on that chain left a restored session blank until its last step.
+  // Mount hydrated non-terminal surfaces immediately; hold only terminals until startup publishes PTY ownership.
   const startupHeldWorktreeId =
     renderedActiveWorktreeId &&
     !canAdmitTerminalTabsForStartup({
@@ -136,8 +134,7 @@ export function applyTerminalColdActivation(controller: TerminalParkingFoundatio
         },
         immediateTabIds
       })
-      // Why: the install mutates only refs, so without a returned revision the
-      // admission drain's effect deps never change and the plan strands.
+      // Installing mutates refs only; advance a revision so the admission effect can drain the plan.
       if (installedDeferralPlan) {
         activationDeferralPlanRevisionRef.current += 1
       }
@@ -165,6 +162,16 @@ export function applyTerminalColdActivation(controller: TerminalParkingFoundatio
       })
     }
     mountedWorktreeIdsRef.current.add(renderedActiveWorktreeId)
+    // Why: the other grid view members are on screen too, so they mount every tab now instead of
+    // keeping a hidden worktree's targeted background mounts.
+    for (const workspaceId of visibleWorkspaceIds) {
+      if (workspaceId === renderedActiveWorktreeId) {
+        continue
+      }
+      mountedWorktreeIdsRef.current.add(workspaceId)
+      backgroundMountTabIdsByWorktreeRef.current.delete(workspaceId)
+      activationDeferredMountTabIdsByWorktreeRef.current.delete(workspaceId)
+    }
   } else {
     lastActivationWorktreeIdRef.current = null
   }

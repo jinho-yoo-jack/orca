@@ -4,10 +4,8 @@ import {
   resolveSshHostReportedPlatform,
   resolveAgentResumeLaunchTarget
 } from '@/lib/agent-resume-launch-target'
-import {
-  getExecutionHostIdForWorktree,
-  getExplicitRuntimeEnvironmentIdForWorktree
-} from '@/lib/worktree-runtime-owner'
+import { getExecutionHostIdForWorktree } from '@/lib/worktree-runtime-owner'
+import { runtimeEnvironmentIdUnlessTwin } from '@/lib/resolve-owner'
 import { getLocalProjectExecutionRuntimeContext } from '@/lib/local-preflight-context'
 import { makePaneKey } from '../../../shared/stable-pane-id'
 import { normalizeAgentProviderSession } from '../../../shared/agent-session-resume'
@@ -63,7 +61,12 @@ export function resolveAgentAccountRestartResumeStartup(
     return null
   }
   const projectRuntime = getLocalProjectExecutionRuntimeContext(state, args.worktreeId)
-  if (projectRuntime?.status === 'resolved' && projectRuntime.runtime.kind === 'wsl') {
+  // Why Codex only: a WSL Claude resume reads the guest's selected-account pointer at launch.
+  if (
+    agent === 'codex' &&
+    projectRuntime?.status === 'resolved' &&
+    projectRuntime.runtime.kind === 'wsl'
+  ) {
     return null
   }
   const worktree = state.getKnownWorktreeById(args.worktreeId)
@@ -82,7 +85,7 @@ export function resolveAgentAccountRestartResumeStartup(
     remotePlatform: resolveSshHostReportedPlatform(
       state,
       executionHostId,
-      getExplicitRuntimeEnvironmentIdForWorktree(state, args.worktreeId)
+      runtimeEnvironmentIdUnlessTwin(state, args.worktreeId)
     )
   })
   const startupPlan = buildAgentResumeStartupPlan({
@@ -93,20 +96,24 @@ export function resolveAgentAccountRestartResumeStartup(
       launchConfig !== undefined
         ? launchConfig.agentArgs
         : unrecordedLaunchUsesDefaults
-          ? resolveTuiAgentLaunchArgs(agent, state.settings?.agentDefaultArgs)
+          ? resolveTuiAgentLaunchArgs(agent, state.settings)
           : null,
     agentEnv:
       launchConfig !== undefined
         ? launchConfig.agentEnv
         : unrecordedLaunchUsesDefaults
-          ? resolveTuiAgentLaunchEnv(agent, state.settings?.agentDefaultEnv)
+          ? resolveTuiAgentLaunchEnv(agent, state.settings, resumeTarget.platform)
           : null,
     ...(launchConfig?.agentCommand ? { agentCommand: launchConfig.agentCommand } : {}),
     ...(launchConfig?.ompResumeFilePath
       ? { ompResumeFilePath: launchConfig.ompResumeFilePath }
       : {}),
     platform: resumeTarget.platform,
-    shell: resumeTarget.shell
+    shell: resumeTarget.shell,
+    // Both restart executors spawn in the tab's start folder.
+    launchCwd:
+      state.tabsByWorktree[args.worktreeId]?.find((tab) => tab.id === args.tabId)?.startupCwd ??
+      worktree?.path
   })
   if (!startupPlan) {
     return null
@@ -117,8 +124,7 @@ export function resolveAgentAccountRestartResumeStartup(
     command: startupPlan.launchCommand,
     ...(startupPlan.env ? { env: startupPlan.env } : {}),
     launchConfig: startupPlan.launchConfig,
-    // Why it rides along: main only repins the launch home for a spawn that
-    // names the session it is resuming, so dropping this drops the account move.
+    // Main repins launch home only when the spawn names its resumed session; keep that identity with the account move.
     resumeProviderSession: providerSession
   }
 }

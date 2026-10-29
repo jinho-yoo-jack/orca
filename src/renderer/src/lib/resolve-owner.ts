@@ -1,9 +1,9 @@
 /**
- * The owner of a workspace as a {@link HostAuthority}, decided from the rows alone. It never reads
- * the "Active Server" focus setting.
+ * The owner of a workspace as a {@link HostAuthority}, decided from the rows alone.
  */
 import {
   getRepoSshConnectionId,
+  parseExecutionHostId,
   toRuntimeExecutionHostId,
   toSshExecutionHostId,
   type ExecutionHostId
@@ -22,7 +22,7 @@ import {
 import type { ExecutionHostOwnerMatch } from '../../../shared/worktree-execution-host-resolution'
 import {
   getFloatingWorkspaceOperationRoute,
-  resolveStrictWorktreeOperationRouteResultForHost,
+  resolveWorktreeOperationRouteResultForHost,
   resolveWorktreeOperationRouteResult,
   type WorktreeOperationRouteResolution,
   type WorktreeOperationRouteState
@@ -32,6 +32,7 @@ import {
   getNestedSshTargetIdForFolderWorkspace
 } from './folder-workspace-runtime-owner'
 import { parseWorkspaceKey } from '../../../shared/workspace-scope'
+import { warnAmbiguousOwnerOnce } from './ambiguous-owner-warning'
 import { hostRouteForAuthority } from '@/runtime/runtime-client-target'
 import type { RuntimeClientTarget } from '../../../shared/runtime-client-target'
 
@@ -48,20 +49,22 @@ function toOwnerMatch(
   if (authority === 'contradictory') {
     return { kind: 'ambiguous' }
   }
-  return authority ? { kind: 'resolved', owner: authority } : { kind: 'missing' }
+  if (authority) {
+    return { kind: 'resolved', owner: authority }
+  }
+  // An explicitly named host route is contested, not missing; missing could be read as this app.
+  return resolution.route.executionHostId || resolution.route.runtimeEnvironmentId?.trim()
+    ? { kind: 'ambiguous' }
+    : { kind: 'missing' }
 }
 
-/**
- * A folder workspace, or the project group an unstamped folder inherits its host from, that two
- * hosts publish. The route resolvers read the first as missing and the second as local, because
- * their unqualified lookups collapse a twin to "no row" before any host fallback runs.
- */
+/** Detect folder/project twins before unqualified route lookups collapse them into missing/local ownership. */
 function isFolderTwin(state: WorktreeOperationRouteState, folderWorkspaceId: string): boolean {
   const folder = resolveIndexedFolderWorkspaceOwner(state.folderWorkspaces, folderWorkspaceId)
   if (folder.kind !== 'resolved') {
     return folder.kind === 'ambiguous'
   }
-  // Why: the folder's own host stamp or SSH connection names its owner; only an inherited host is moot.
+  // Folder host stamps/SSH connections prove ownership; only inherited host evidence is moot.
   return (
     !folder.owner.executionHostId?.trim() &&
     !folder.owner.connectionId?.trim() &&
@@ -70,25 +73,35 @@ function isFolderTwin(state: WorktreeOperationRouteState, folderWorkspaceId: str
   )
 }
 
-function resolveRoute(
+/** The host the caller or the active workspace selection names for this workspace, if any. */
+export function namedHostForOwnerRef(
+  state: Pick<WorktreeOperationRouteState, 'activeWorktreeId' | 'activeWorkspaceExecutionHostId'>,
+  ref: WorkspaceOwnerRef
+): ExecutionHostId | null {
+  return (
+    ref.hostId ??
+    (state.activeWorktreeId === ref.workspaceId ? state.activeWorkspaceExecutionHostId : null) ??
+    null
+  )
+}
+
+export function resolveOwner(
   state: WorktreeOperationRouteState,
   ref: WorkspaceOwnerRef
 ): ExecutionHostOwnerMatch<HostAuthority> {
   if (getFloatingWorkspaceOperationRoute(ref.workspaceId)) {
     return { kind: 'resolved', owner: SELF_LOCAL_AUTHORITY }
   }
-  const hostId =
-    ref.hostId ??
-    (state.activeWorktreeId === ref.workspaceId ? state.activeWorkspaceExecutionHostId : null)
+  const hostId = namedHostForOwnerRef(state, ref)
   const scope = parseWorkspaceKey(ref.workspaceId)
-  // Why: with no host named, nothing can pick a twin; refusing beats landing on the wrong machine.
+  // No host evidence can choose a twin; refuse rather than route to the wrong machine.
   if (!hostId && scope?.type === 'folder' && isFolderTwin(state, scope.folderWorkspaceId)) {
     return { kind: 'ambiguous' }
   }
-  // Why strict: rival servers proxying the same `ssh:t` must not read as a directly dialed target.
+  // Distinct servers proxying ssh:t must never collapse into directly dialed target ownership.
   const match = toOwnerMatch(
     hostId
-      ? resolveStrictWorktreeOperationRouteResultForHost(state, ref.workspaceId, hostId)
+      ? resolveWorktreeOperationRouteResultForHost(state, ref.workspaceId, hostId)
       : resolveWorktreeOperationRouteResult(state, ref.workspaceId)
   )
   return match.kind === 'resolved'
@@ -96,10 +109,7 @@ function resolveRoute(
     : match
 }
 
-/**
- * A route names only the server; the owning folder or repo row's `connectionId` is the SSH target
- * behind it, the same reading `resolveWorktreeExecutionHost` applies.
- */
+/** Server routes omit nested SSH; resolve connectionId from the owning folder/repo row, matching resolveWorktreeExecutionHost. */
 function withNestedPlace(
   state: WorktreeOperationRouteState,
   ref: WorkspaceOwnerRef,
@@ -129,12 +139,12 @@ function nestedRepoTargetId(
   return repo ? getRepoSshConnectionId(repo) : null
 }
 
-export function resolveOwner(
+/** Two hosts publish this workspace (or contest it), so no host-routed action may pick one. */
+export function isTwinWorkspace(
   state: WorktreeOperationRouteState,
-  ref: WorkspaceOwnerRef
-): ExecutionHostOwnerMatch<HostAuthority> {
-  // Why: focus is the only settings field the route resolvers read; blanking it makes this focus-free.
-  return resolveRoute({ ...state, settings: null }, ref)
+  workspaceId: string | null | undefined
+): boolean {
+  return !!workspaceId && resolveOwner(state, { workspaceId }).kind === 'ambiguous'
 }
 
 /** Transport to the workspace's owner, or `null` when the rows name none or disagree. */
@@ -144,22 +154,6 @@ export function runtimeTargetForWorkspaceOwner(
 ): RuntimeClientTarget | null {
   const match = resolveOwner(state, ref)
   return match.kind === 'resolved' ? hostRouteForAuthority(match.owner).target : null
-}
-
-const reportedAmbiguousRefusals = new Set<string>()
-
-/** Logs a refusal once per site and workspace: a twin's refusals repeat on every persist or sweep. */
-export function warnAmbiguousOwnerRefusalOnce(site: string, workspaceId: string): void {
-  const key = `${site}\0${workspaceId}`
-  if (reportedAmbiguousRefusals.has(key)) {
-    return
-  }
-  reportedAmbiguousRefusals.add(key)
-  console.warn(`[${site}] refused: ambiguous owner for`, workspaceId)
-}
-
-export function resetAmbiguousOwnerRefusalWarningsForTests(): void {
-  reportedAmbiguousRefusals.clear()
 }
 
 function restoredFolderEnvironmentId(
@@ -189,8 +183,7 @@ export function runtimeEnvironmentIdForWorkspaceOwner(
     case 'ambiguous':
       return match
     case 'missing':
-      // Why: no row places it on a server, which has always read as this app's — except a folder
-      // whose saved session names its server before that server's folder catalog loads.
+      // No server row normally means this app, except folder sessions can name a server before catalog hydration.
       return { kind: 'resolved', environmentId: restoredFolderEnvironmentId(state, ref) }
     case 'resolved': {
       const { endpoint } = match.owner
@@ -202,4 +195,62 @@ export function runtimeEnvironmentIdForWorkspaceOwner(
       }
     }
   }
+}
+
+/** Resolve paired server, or null for local/direct SSH/twins, preserving main’s reader path. refusalAction logs ambiguous skipped writes once. */
+export function runtimeEnvironmentIdUnlessTwin(
+  state: WorktreeOperationRouteState,
+  workspaceId: string | null | undefined,
+  refusalAction?: string
+): string | null {
+  if (!workspaceId) {
+    return null
+  }
+  const owner = runtimeEnvironmentIdForWorkspaceOwner(state, { workspaceId })
+  if (owner.kind === 'resolved') {
+    return owner.environmentId
+  }
+  if (refusalAction) {
+    warnAmbiguousOwnerOnce(workspaceId, refusalAction)
+  }
+  return null
+}
+
+/** A server route proven only by repo setup has no supporting worktree row. ssh:X and server connectionId X are different namespaces: reads/spawn can follow, but host writes may hit another machine with the same path. */
+export function isUnprovenServerSshRoute(
+  state: Pick<WorktreeOperationRouteState, 'worktreesByRepo' | 'detectedWorktreesByRepo'>,
+  workspaceId: string,
+  owner: HostAuthority
+): boolean {
+  const { endpoint, at } = owner
+  if (
+    endpoint.kind !== 'environment' ||
+    at === 'local' ||
+    parseWorkspaceKey(workspaceId)?.type === 'folder'
+  ) {
+    return false
+  }
+  return !someWorktreeCopy(
+    state,
+    workspaceId,
+    (row) =>
+      parseExecutionHostId(row.hostId)?.id === at &&
+      row.runtimeOwnerEnvironmentId?.trim() === endpoint.environmentId
+  )
+}
+
+type WorktreeCopy = { hostId?: string; runtimeOwnerEnvironmentId?: string }
+
+/** Whether a listed or detected row with this worktree id satisfies `matches`. */
+export function someWorktreeCopy(
+  state: Pick<WorktreeOperationRouteState, 'worktreesByRepo' | 'detectedWorktreesByRepo'>,
+  worktreeId: string,
+  matches: (row: WorktreeCopy) => boolean
+): boolean {
+  const repoId = getRepoIdFromWorktreeId(worktreeId)
+  const copyMatches = (row: WorktreeCopy & { id: string }) => row.id === worktreeId && matches(row)
+  return Boolean(
+    state.worktreesByRepo?.[repoId]?.some(copyMatches) ||
+    state.detectedWorktreesByRepo?.[repoId]?.worktrees.some(copyMatches)
+  )
 }
